@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
-import asyncio
-import concurrent.futures
-import sys
-import os
 import json
+import sys
 
+import asyncio
+import aiohttp
 import requests
 import websockets
 
@@ -13,7 +12,9 @@ MM_URL = 'http://127.0.0.1:8065/api/v4'
 MM_WSURL = 'ws://127.0.0.1:8065/api/v4/websocket'
 MM_LOGIN = 'bot@localhost.local'
 MM_PASSWORD = '12345678'
+
 CALLBACK_URL = 'https://api.myapp.com/messages'
+CALLBACK_TIMEOUT = 10
 
 
 def login():
@@ -52,7 +53,6 @@ async def authenticateWebsocket(websocket):
     response = await websocket.recv()
     status = json.loads(response)
     if 'event' in status and status['event'] == 'hello':
-        print("Auth OK")
         return True
     else:
         return False
@@ -63,38 +63,44 @@ async def waitForMessage(websocket):
         event = await websocket.recv()
         await eventHandler(event)
 
+
 async def eventHandler(event):
     data = json.loads(event)
     if 'event' in data and data['event'] == 'posted':
-        loop.run_in_executor(executor, messageTranslate, event)
+        loop.create_task(sendCallback(event))
 
 
-def messageTranslate(message):
-    requests.post(CALLBACK_URL, json=message)
+async def sendCallback(event):
+    try:
+        async with aiohttp.ClientSession() as session:
+            await session.post(CALLBACK_URL, json=event, timeout=CALLBACK_TIMEOUT)
+    except asyncio.TimeoutError:
+        pass
 
-loop = asyncio.get_event_loop()
-executor = concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count())
 
-token = login()
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
 
-try:
-    sys.exit(loop.run_until_complete(createConnection()))
-except KeyboardInterrupt:
-    print("Shutting down, press Ctrl+C to force exit.", flush=True)
+    token = login()
 
-    def shutdown_exception_handler(l, context):
-        if "exception" not in context \
-                or not isinstance(context["exception"], asyncio.CancelledError):
-            l.default_exception_handler(context)
-    loop.set_exception_handler(shutdown_exception_handler)
+    try:
+        sys.exit(loop.run_until_complete(createConnection()))
+    except KeyboardInterrupt:
+        print("Shutting down, press Ctrl+C to force exit.", flush=True)
 
-    tasks = asyncio.gather(*asyncio.Task.all_tasks(loop=loop),
-                           loop=loop,
-                           return_exceptions=True)
-    tasks.add_done_callback(lambda t: loop.stop())
-    tasks.cancel()
+        def shutdown_exception_handler(l, context):
+            if "exception" not in context \
+                    or not isinstance(context["exception"], asyncio.CancelledError):
+                l.default_exception_handler(context)
+        loop.set_exception_handler(shutdown_exception_handler)
 
-    while not tasks.done() and not loop.is_closed():
-        loop.run_forever()
-finally:
-    loop.close()
+        tasks = asyncio.gather(*asyncio.Task.all_tasks(loop=loop),
+                               loop=loop,
+                               return_exceptions=True)
+        tasks.add_done_callback(lambda t: loop.stop())
+        tasks.cancel()
+
+        while not tasks.done() and not loop.is_closed():
+            loop.run_forever()
+    finally:
+        loop.close()
