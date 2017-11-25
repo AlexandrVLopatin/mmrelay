@@ -14,7 +14,7 @@ MM_WSURL = 'ws://127.0.0.1:8065/api/v4/websocket'
 MM_LOGIN = 'bot@localhost.local'
 MM_PASSWORD = '12345678'
 
-CALLBACK_URL = 'http://127.0.0.1/1.php'
+CALLBACK_URL = 'https://api.myapp.com/messages'
 CALLBACK_TIMEOUT = 10
 
 
